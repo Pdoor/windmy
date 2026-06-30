@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
 import L from 'leaflet';
-import type { WindGridPoint } from '../utils/weatherApi';
+import type { MapGridPoint } from '../utils/weatherApi';
 
 interface Particle {
   lat: number;
@@ -17,7 +17,7 @@ interface Particle {
 interface UseWindParticlesProps {
   map: L.Map | null;
   canvas: HTMLCanvasElement | null;
-  windGrid: WindGridPoint[];
+  windGrid: MapGridPoint[];
   bounds: L.LatLngBounds | null;
   active: boolean;
 }

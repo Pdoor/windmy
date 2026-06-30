@@ -4,7 +4,7 @@ import SearchBar from './components/SearchBar';
 import ForecastPanel from './components/ForecastPanel';
 import Legend from './components/Legend';
 import { fetchRadarMetadata, fetchForecast, type RadarMetadata, type MultiModelForecast } from './utils/weatherApi';
-import { Play, Pause, CloudLightning, Wind, EyeOff } from 'lucide-react';
+import { Play, Pause, CloudLightning, Wind, EyeOff, Thermometer, Cloud } from 'lucide-react';
 
 export default function App() {
   // Location state (defaults to Rome, Italy)
@@ -23,7 +23,7 @@ export default function App() {
   const playIntervalRef = useRef<number | null>(null);
 
   // Map layer state
-  const [activeLayer, setActiveLayer] = useState<'radar' | 'wind' | 'none'>('radar');
+  const [activeLayer, setActiveLayer] = useState<'radar' | 'wind' | 'temperature' | 'clouds' | 'none'>('radar');
 
   // Fetch Radar Metadata on mount
   useEffect(() => {
@@ -145,6 +145,22 @@ export default function App() {
           >
             <Wind size={16} />
             <span>Vento</span>
+          </button>
+          <button
+            className={`layer-btn ${activeLayer === 'temperature' ? 'active' : ''}`}
+            onClick={() => setActiveLayer('temperature')}
+            title="Mappa delle Temperature"
+          >
+            <Thermometer size={16} />
+            <span>Temp</span>
+          </button>
+          <button
+            className={`layer-btn ${activeLayer === 'clouds' ? 'active' : ''}`}
+            onClick={() => setActiveLayer('clouds')}
+            title="Copertura Nuvolosa"
+          >
+            <Cloud size={16} />
+            <span>Nubi</span>
           </button>
           <button
             className={`layer-btn ${activeLayer === 'none' ? 'active' : ''}`}

@@ -925,6 +925,14 @@ body {
   background: linear-gradient(to right, rgba(165, 243, 252, 0.6), rgba(34, 211, 238, 0.7), rgba(52, 211, 153, 0.8), rgba(234, 179, 8, 0.9), rgba(239, 68, 68, 1));
 }
 
+.temp-scale-gradient {
+  background: linear-gradient(to right, #9333ea, #1e3ab8, #06b6d4, #10b981, #f59e0b, #dc2626);
+}
+
+.clouds-gradient {
+  background: linear-gradient(to right, rgba(15, 23, 42, 0.9), rgba(148, 163, 184, 0.5), rgba(255, 255, 255, 0.95));
+}
+
 .legend-labels {
   display: flex;
   justify-content: space-between;

@@ -56,11 +56,13 @@ export interface MultiModelForecast {
   };
 }
 
-export interface WindGridPoint {
+export interface MapGridPoint {
   lat: number;
   lon: number;
   windSpeed: number;
   windDirection: number;
+  temperature: number;
+  cloudCover: number;
 }
 
 // Fetch RainViewer radar metadata
@@ -152,14 +154,14 @@ export async function fetchForecast(lat: number, lon: number): Promise<MultiMode
   };
 }
 
-// Fetch wind grid for particle animation
-export async function fetchWindGrid(
+// Fetch grid data for particle animation and heatmap overlays
+export async function fetchMapGrid(
   west: number,
   south: number,
   east: number,
   north: number,
   gridSize: number = 8
-): Promise<WindGridPoint[]> {
+): Promise<MapGridPoint[]> {
   const lats: number[] = [];
   const lons: number[] = [];
 
@@ -176,16 +178,14 @@ export async function fetchWindGrid(
     }
   }
 
-  const url = `https://api.open-meteo.com/v1/forecast?latitude=${lats.join(',')}&longitude=${lons.join(',')}&current=wind_speed_10m,wind_direction_10m`;
+  const url = `https://api.open-meteo.com/v1/forecast?latitude=${lats.join(',')}&longitude=${lons.join(',')}&current=wind_speed_10m,wind_direction_10m,temperature_2m,cloud_cover`;
 
   const response = await fetch(url);
   if (!response.ok) {
-    throw new Error('Failed to fetch wind grid');
+    throw new Error('Failed to fetch map grid');
   }
   const data = await response.json();
 
-  // If we query multiple locations, Open-Meteo returns an array or a single object if there's only one.
-  // When querying multiple coords, it is an array.
   const results = Array.isArray(data) ? data : [data];
 
   return results.map((result: any, idx: number) => {
@@ -194,6 +194,8 @@ export async function fetchWindGrid(
       lon: lons[idx],
       windSpeed: result.current?.wind_speed_10m || 0,
       windDirection: result.current?.wind_direction_10m || 0,
+      temperature: result.current?.temperature_2m || 0,
+      cloudCover: result.current?.cloud_cover || 0,
     };
   });
 }

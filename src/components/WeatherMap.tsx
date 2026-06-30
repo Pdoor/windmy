@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
-import { fetchWindGrid, type RadarFrame, type RadarMetadata, type WindGridPoint } from '../utils/weatherApi';
+import { fetchMapGrid, type RadarFrame, type RadarMetadata, type MapGridPoint } from '../utils/weatherApi';
 import { useWindParticles } from '../hooks/useWindParticles';
 
 // Fix Leaflet marker icon issue in Vite
@@ -26,7 +26,7 @@ interface WeatherMapProps {
   cityName: string;
   radarMetadata: RadarMetadata | null;
   radarFrameIndex: number;
-  activeLayer: 'radar' | 'wind' | 'none';
+  activeLayer: 'radar' | 'wind' | 'temperature' | 'clouds' | 'none';
   onMapClick: (lat: number, lon: number, name: string) => void;
 }
 
@@ -49,10 +49,10 @@ export default function WeatherMap({
   const radarLayerBRef = useRef<L.TileLayer | null>(null);
   const activeRadarLayerRef = useRef<'A' | 'B'>('A');
 
-  // Wind Particle state
-  const [windGrid, setWindGrid] = useState<WindGridPoint[]>([]);
+  // Map Grid state (Wind, Temp, Clouds)
+  const [windGrid, setWindGrid] = useState<MapGridPoint[]>([]);
   const [mapBounds, setMapBounds] = useState<L.LatLngBounds | null>(null);
-  const [isWindLoading, setIsWindLoading] = useState(false);
+  const [isGridLoading, setIsGridLoading] = useState(false);
 
   // Initialize Map
   useEffect(() => {
@@ -118,36 +118,37 @@ export default function WeatherMap({
     }
   }, [lat, lon, map, cityName]);
 
-  // Fetch Wind Grid when bounds change and wind layer is active
+  // Fetch Map Grid when bounds change and a grid-based layer is active
   useEffect(() => {
-    if (!map || !mapBounds || activeLayer !== 'wind') {
+    const isGridLayer = activeLayer === 'wind' || activeLayer === 'temperature' || activeLayer === 'clouds';
+    if (!map || !mapBounds || !isGridLayer) {
       setWindGrid([]);
       return;
     }
 
     let isMounted = true;
     const fetchGrid = async () => {
-      setIsWindLoading(true);
+      setIsGridLoading(true);
       try {
         const west = mapBounds.getWest();
         const south = mapBounds.getSouth();
         const east = mapBounds.getEast();
         const north = mapBounds.getNorth();
 
-        const grid = await fetchWindGrid(west, south, east, north, 8);
+        const grid = await fetchMapGrid(west, south, east, north, 8);
         if (isMounted) {
           setWindGrid(grid);
         }
       } catch (err) {
-        console.error('Error fetching wind grid:', err);
+        console.error('Error fetching map grid:', err);
       } finally {
         if (isMounted) {
-          setIsWindLoading(false);
+          setIsGridLoading(false);
         }
       }
     };
 
-    // Debounce wind grid fetch slightly
+    // Debounce grid fetch slightly
     const timer = setTimeout(fetchGrid, 300);
 
     return () => {
@@ -186,6 +187,7 @@ export default function WeatherMap({
     const newLayer = L.tileLayer(tileUrl, {
       opacity: 0,
       maxZoom: 19,
+      maxNativeZoom: 15, // RainViewer tiles are native up to zoom 15; Leaflet will upscale them above this
       zIndex: 10,
     });
 
@@ -219,6 +221,89 @@ export default function WeatherMap({
       activeRadarLayerRef.current = 'A';
     }
   }, [radarFrameIndex, radarMetadata, activeLayer, map]);
+
+  // Effect to draw static overlays (temperature heatmap or cloud cover)
+  useEffect(() => {
+    if (!canvasRef.current || !map || windGrid.length === 0 || !mapBounds) return;
+    if (activeLayer !== 'temperature' && activeLayer !== 'clouds') return;
+
+    const canvas = canvasRef.current;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    // Create 8x8 offscreen canvas
+    const offscreenCanvas = document.createElement('canvas');
+    offscreenCanvas.width = 8;
+    offscreenCanvas.height = 8;
+    const offscreenCtx = offscreenCanvas.getContext('2d');
+    if (!offscreenCtx) return;
+
+    const imgData = offscreenCtx.createImageData(8, 8);
+
+    // Temperature color scale helper (maps temperature to rgb)
+    const getTempColor = (t: number): [number, number, number] => {
+      if (t <= -10) return [147, 51, 234]; // Purple
+      if (t <= 0) {
+        const pct = (t - (-10)) / 10;
+        return [Math.round(147 - pct * 117), Math.round(51 + pct * 7), Math.round(234 - pct * 96)];
+      }
+      if (t <= 10) {
+        const pct = t / 10;
+        return [Math.round(30 - pct * 24), Math.round(58 + pct * 124), Math.round(138 + pct * 74)];
+      }
+      if (t <= 20) {
+        const pct = (t - 10) / 10;
+        return [Math.round(6 - pct * 10), Math.round(182 + pct * 3), Math.round(212 - pct * 83)];
+      }
+      if (t <= 30) {
+        const pct = (t - 20) / 10;
+        return [Math.round(16 + pct * 229), Math.round(185 - pct * 27), Math.round(129 - pct * 118)];
+      }
+      const pct = Math.min(1, (t - 30) / 10);
+      return [Math.round(245 - pct * 25), Math.round(158 - pct * 120), Math.round(11 + pct * 27)];
+    };
+
+    for (let y = 0; y < 8; y++) {
+      const latIdx = 7 - y; // flip y because canvas y goes down, lat goes up
+      for (let x = 0; x < 8; x++) {
+        const lonIdx = x;
+        const gridIdx = latIdx * 8 + lonIdx;
+        const pt = windGrid[gridIdx];
+        const pixelIdx = (y * 8 + x) * 4;
+
+        if (pt) {
+          if (activeLayer === 'temperature') {
+            const rgb = getTempColor(pt.temperature);
+            imgData.data[pixelIdx] = rgb[0];
+            imgData.data[pixelIdx + 1] = rgb[1];
+            imgData.data[pixelIdx + 2] = rgb[2];
+            imgData.data[pixelIdx + 3] = 135; // Alpha (semi-transparent heatmap, 135/255 = 53%)
+          } else if (activeLayer === 'clouds') {
+            imgData.data[pixelIdx] = 255;
+            imgData.data[pixelIdx + 1] = 255;
+            imgData.data[pixelIdx + 2] = 255;
+            // Scale opacity of clouds (max 180/255 = 70% opacity)
+            imgData.data[pixelIdx + 3] = Math.round((pt.cloudCover / 100) * 180);
+          }
+        } else {
+          imgData.data[pixelIdx + 3] = 0;
+        }
+      }
+    }
+
+    offscreenCtx.putImageData(imgData, 0, 0);
+
+    // Clear main canvas and draw the stretched offscreen canvas
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(offscreenCanvas, 0, 0, canvas.width, canvas.height);
+
+    // Cleanup: clear canvas when layer changes
+    return () => {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+    };
+  }, [activeLayer, windGrid, map, mapBounds]);
 
   // Handle Canvas Resize
   useEffect(() => {
@@ -280,11 +365,11 @@ export default function WeatherMap({
         }}
       />
 
-      {/* Loading indicator for wind grid */}
-      {isWindLoading && activeLayer === 'wind' && (
+      {/* Loading indicator for grid */}
+      {isGridLoading && (activeLayer === 'wind' || activeLayer === 'temperature' || activeLayer === 'clouds') && (
         <div className="map-overlay-loading">
           <div className="spinner" />
-          <span>Caricamento vento...</span>
+          <span>Caricamento dati mappa...</span>
         </div>
       )}
     </div>
