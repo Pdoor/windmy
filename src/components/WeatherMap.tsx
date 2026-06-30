@@ -180,14 +180,14 @@ export default function WeatherMap({
     if (!currentFrame) return;
 
     // Tile URL for RainViewer radar
-    const tileUrl = `${radarMetadata.host}${currentFrame.path}/256/{z}/{x}/{y}/2/1_1.png`;
+    const tileUrl = `${radarMetadata.host}${currentFrame.path}/256/{z}/{x}/{y}/1/1_1.png`;
 
     // Double buffering logic:
     // Create new layer, load it, then swap opacities to prevent flashing.
     const newLayer = L.tileLayer(tileUrl, {
       opacity: 0,
       maxZoom: 19,
-      maxNativeZoom: 15, // RainViewer tiles are native up to zoom 15; Leaflet will upscale them above this
+      maxNativeZoom: 7, // RainViewer max native zoom is 7 as of 2026; Leaflet will upscale them above this
       zIndex: 10,
     });
 
