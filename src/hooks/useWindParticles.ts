@@ -112,8 +112,14 @@ export function useWindParticles({
 
     // Initialize or respawn a single particle
     const initParticle = (p: Partial<Particle> = {}): Particle => {
-      const lat = south + Math.random() * latRange;
-      const lon = west + Math.random() * lonRange;
+      const currentBounds = map.getBounds();
+      const cSouth = currentBounds.getSouth();
+      const cNorth = currentBounds.getNorth();
+      const cWest = currentBounds.getWest();
+      const cEast = currentBounds.getEast();
+
+      const lat = cSouth + Math.random() * (cNorth - cSouth);
+      const lon = cWest + Math.random() * (cEast - cWest);
       const latLng = L.latLng(lat, lon);
       const screenPoint = map.latLngToContainerPoint(latLng);
 

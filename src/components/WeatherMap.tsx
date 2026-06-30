@@ -54,6 +54,16 @@ export default function WeatherMap({
   const [mapBounds, setMapBounds] = useState<L.LatLngBounds | null>(null);
   const [isGridLoading, setIsGridLoading] = useState(false);
 
+  // Refs for real-time heatmap stretching during zoom/pan
+  const activeLayerRef = useRef(activeLayer);
+  const offscreenCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const renderedBoundsRef = useRef<L.LatLngBounds | null>(null);
+  const drawHeatmapRef = useRef<(() => void) | null>(null);
+
+  useEffect(() => {
+    activeLayerRef.current = activeLayer;
+  }, [activeLayer]);
+
   // Initialize Map
   useEffect(() => {
     if (!mapContainerRef.current) return;
@@ -76,6 +86,32 @@ export default function WeatherMap({
     setMap(initialMap);
     setMapBounds(initialMap.getBounds());
 
+    // Define stable heatmap drawing function
+    const drawHeatmap = () => {
+      if (!canvasRef.current || !initialMap || !offscreenCanvasRef.current || !renderedBoundsRef.current) return;
+      const canvas = canvasRef.current;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return;
+
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      const bounds = renderedBoundsRef.current;
+      const nw = initialMap.latLngToContainerPoint(bounds.getNorthWest());
+      const se = initialMap.latLngToContainerPoint(bounds.getSouthEast());
+
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = 'high';
+      ctx.drawImage(
+        offscreenCanvasRef.current,
+        nw.x,
+        nw.y,
+        se.x - nw.x,
+        se.y - nw.y
+      );
+    };
+
+    drawHeatmapRef.current = drawHeatmap;
+
     // Handle click on map to select new location
     initialMap.on('click', async (e) => {
       const { lat: clickLat, lng: clickLng } = e.latlng;
@@ -89,6 +125,13 @@ export default function WeatherMap({
         onMapClick(clickLat, clickLng, name);
       } catch (err) {
         onMapClick(clickLat, clickLng, `Lat: ${clickLat.toFixed(2)}, Lon: ${clickLng.toFixed(2)}`);
+      }
+    });
+
+    // Handle map move in real-time to stretch the heatmap
+    initialMap.on('move', () => {
+      if (activeLayerRef.current === 'temperature' || activeLayerRef.current === 'clouds') {
+        drawHeatmap();
       }
     });
 
@@ -231,10 +274,13 @@ export default function WeatherMap({
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    // Create 8x8 offscreen canvas
-    const offscreenCanvas = document.createElement('canvas');
-    offscreenCanvas.width = 8;
-    offscreenCanvas.height = 8;
+    // Initialize or retrieve offscreen canvas
+    if (!offscreenCanvasRef.current) {
+      offscreenCanvasRef.current = document.createElement('canvas');
+      offscreenCanvasRef.current.width = 8;
+      offscreenCanvasRef.current.height = 8;
+    }
+    const offscreenCanvas = offscreenCanvasRef.current;
     const offscreenCtx = offscreenCanvas.getContext('2d');
     if (!offscreenCtx) return;
 
@@ -292,12 +338,10 @@ export default function WeatherMap({
     }
 
     offscreenCtx.putImageData(imgData, 0, 0);
+    renderedBoundsRef.current = mapBounds;
 
-    // Clear main canvas and draw the stretched offscreen canvas
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    ctx.imageSmoothingEnabled = true;
-    ctx.imageSmoothingQuality = 'high';
-    ctx.drawImage(offscreenCanvas, 0, 0, canvas.width, canvas.height);
+    // Draw using our stable ref function
+    drawHeatmapRef.current?.();
 
     // Cleanup: clear canvas when layer changes
     return () => {
